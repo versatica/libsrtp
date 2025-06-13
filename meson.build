@@ -1,4 +1,4 @@
-project('libsrtp3', 'c', version: '3.0.1',
+project('libsrtp3', 'c', version: '3.0.0',
   meson_version: '>= 0.52.0',
   default_options: ['buildtype=debugoptimized'])
 
