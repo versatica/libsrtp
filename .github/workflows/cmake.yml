@@ -30,17 +30,17 @@ jobs:
             crypto: openssl3
         include:
           - crypto: internal
-            cmake-crypto-enable: ""
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=internal"
           - crypto: openssl
-            cmake-crypto-enable: "-DENABLE_OPENSSL=ON"
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=openssl"
           - crypto: openssl3
-            cmake-crypto-enable: "-DENABLE_OPENSSL=ON"
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=openssl"
           - crypto: wolfssl
-            cmake-crypto-enable: "-DENABLE_WOLFSSL=ON"
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=wolfssl"
           - crypto: nss
-            cmake-crypto-enable: "-DENABLE_NSS=ON"
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=nss"
           - crypto: mbedtls
-            cmake-crypto-enable: "-DENABLE_MBEDTLS=ON"
+            cmake-crypto-enable: "-DCRYPTO_LIBRARY=mbedtls"
 
     runs-on: ${{ matrix.os }}
 
@@ -53,7 +53,7 @@ jobs:
       run: |
         git clone https://github.com/wolfSSL/wolfssl
         cd wolfssl
-        git checkout v5.7.0-stable
+        git checkout v5.9.2-stable
         ./autogen.sh
         ./configure '--enable-srtp-kdf' '--enable-aesctr' '--enable-intelasm' '--enable-aesgcm-stream'
         make
@@ -68,7 +68,15 @@ jobs:
 
     - name: Setup Ubuntu MbedTLS
       if:  matrix.os == 'ubuntu-latest' && matrix.crypto == 'mbedtls'
-      run: sudo apt-get install libmbedtls-dev
+      run: |
+        git clone https://github.com/Mbed-TLS/mbedtls.git
+        cd mbedtls
+        git checkout mbedtls-4.0.0
+        git submodule update --init --recursive
+        cmake -S . -B build
+        cmake --build build
+        sudo cmake --install build
+        cd ..
 
     - name: Setup macOS OpenSSL
       if: matrix.os == 'macos-latest' && matrix.crypto == 'openssl'
@@ -86,7 +94,7 @@ jobs:
         brew install autoconf automake libtool
         git clone https://github.com/wolfSSL/wolfssl
         cd wolfssl
-        git checkout v5.7.0-stable
+        git checkout v5.9.2-stable
         ./autogen.sh
         CPU=`sysctl -n machdep.cpu.brand_string`
         if [[ "$CPU" =~ Intel ]]; then
@@ -104,7 +112,9 @@ jobs:
 
     - name: Setup macOS MbedTLS
       if:  matrix.os == 'macos-latest' && matrix.crypto == 'mbedtls'
-      run: brew install mbedtls
+      run: |
+        brew install mbedtls@3
+        echo "CMAKE_PREFIX_PATH=$(brew --prefix mbedtls@3)" >> $GITHUB_ENV
 
     - uses: actions/checkout@v2
 
@@ -114,7 +124,18 @@ jobs:
     - name: Configure CMake
       working-directory: ${{github.workspace}}/build
       shell: bash
-      run: cmake $GITHUB_WORKSPACE -DLIBSRTP_TEST_APPS=ON  ${{ matrix.cmake-crypto-enable}} ${{env.cmake-crypto-dir}}
+      run: |
+        sanitizer_flags=""
+        if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
+          sanitizer_flags="-DENABLE_SANITIZE_ADDR=ON -DENABLE_SANITIZE_UNDEF=ON"
+        fi
+
+        cmake $GITHUB_WORKSPACE \
+          -DLIBSRTP_TEST_APPS=ON \
+          -DCMAKE_BUILD_TYPE=Debug \
+          $sanitizer_flags \
+          ${{ matrix.cmake-crypto-enable}} \
+          ${{env.cmake-crypto-dir}}
 
     - name: Build
       working-directory: ${{github.workspace}}/build

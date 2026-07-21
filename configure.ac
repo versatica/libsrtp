@@ -204,24 +204,23 @@ AC_MSG_RESULT([$enable_debug_logging])
 PKG_PROG_PKG_CONFIG
 AS_IF([test "x$PKG_CONFIG" != "x"], [PKG_CONFIG="$PKG_CONFIG --static"])
 
-AC_MSG_CHECKING([whether to leverage OpenSSL crypto])
-AC_ARG_ENABLE([openssl],
-  [AS_HELP_STRING([--enable-openssl], [compile in OpenSSL crypto engine])],
-  [], [enable_openssl=no])
-AC_MSG_RESULT([$enable_openssl])
-
-AC_MSG_CHECKING([whether to leverage wolfSSL crypto])
-AC_ARG_ENABLE([wolfssl],
-  [AS_HELP_STRING([--enable-wolfssl], [compile in wolfSSL crypto engine])],
-  [], [enable_wolfssl=no])
-AC_MSG_RESULT([$enable_wolfssl])
-
-AC_MSG_CHECKING([whether to leverage NSS crypto])
-AC_ARG_ENABLE([nss],
-  [AS_HELP_STRING([--enable-nss], [compile in NSS crypto engine])],
-  [], [enable_nss=no])
-AC_MSG_RESULT([$enable_nss])
-
+AC_MSG_CHECKING([for crypto library])
+AC_ARG_WITH([crypto-library], AS_HELP_STRING([--with-crypto-library=TYPE], [Select crypto library, one of: openssl, wolfssl, nss, internal]),
+      [case "$with_crypto_library" in
+         internal) ;;
+         openssl) ;;
+         wolfssl) ;;
+         nss) ;;
+         *) AC_MSG_ERROR([Invalid crypto library: $with_crypto_library. Select one of: openssl, wolfssl, nss, internal]) ;;
+       esac],
+      [with_crypto_library=openssl])
+AC_MSG_RESULT([$with_crypto_library])
+case "$with_crypto_library" in
+   internal) ;;
+   openssl) enable_openssl=yes ;;
+   wolfssl) enable_wolfssl=yes ;;
+   nss) enable_nss=yes ;;
+esac
 if test "$enable_openssl" = "yes"; then
    AC_MSG_CHECKING([for user specified OpenSSL directory])
    AC_ARG_WITH([openssl-dir],
@@ -251,9 +250,6 @@ if test "$enable_openssl" = "yes"; then
      PKG_CHECK_MODULES([crypto], [libcrypto],
        [CFLAGS="$CFLAGS $crypto_CFLAGS"
         LIBS="$crypto_LIBS $LIBS"])
-   else
-     AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_WARN([can't find libdl])])
-     AC_CHECK_LIB([z], [inflate], [], [AC_MSG_WARN([can't find libz])])
    fi
 
    AC_SEARCH_LIBS([EVP_EncryptInit], [crypto],
@@ -298,8 +294,6 @@ elif test "$enable_wolfssl" = "yes"; then
          AC_MSG_FAILURE([Invalid wolfSSL location: $with_wolfssl_dir])
        fi],
       [AC_MSG_RESULT([no])])
-
-   AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_WARN([can't find libdl])])
 
    AC_DEFINE([GCM], [1], [Define this to use AES-GCM.])
    AC_DEFINE([WOLFSSL], [1], [Define this to use wolfSSL crypto.])

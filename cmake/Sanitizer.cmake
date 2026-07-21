@@ -1,5 +1,5 @@
 function(add_sanitizer_flags)
-    if(NOT ENABLE_SANITIZE_ADDR AND NOT ENABLE_SANITIZE_UNDEF)
+    if(NOT ENABLE_SANITIZE_ADDR AND NOT ENABLE_SANITIZE_UNDEF AND NOT ENABLE_SANITIZE_LEAK AND NOT ENABLE_SANITIZE_THREAD)
         return()
     endif()
 
@@ -24,7 +24,7 @@ function(add_sanitizer_flags)
 
         if(ENABLE_SANITIZE_THREAD)
             if(ENABLE_SANITIZE_ADDR OR ENABLE_SANITIZE_LEAK)
-                message(WARNING "thread does not work with: address and leak")
+                message(FATAL_ERROR "sanitize=thread does not work with sanitize=address or sanitize=leak")
             endif()
             add_compile_options("-fsanitize=thread")
             add_link_options("-fsanitize=thread")

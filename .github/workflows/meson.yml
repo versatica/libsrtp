@@ -30,7 +30,7 @@ jobs:
             crypto: openssl3
         include:
           - crypto: internal
-            meson-crypto-enable: ""
+            meson-crypto-enable: "-Dcrypto-library=internal"
           - crypto: openssl
             meson-crypto-enable: "-Dcrypto-library=openssl"
           - crypto: openssl3
@@ -70,7 +70,7 @@ jobs:
       run: |
         git clone https://github.com/wolfSSL/wolfssl
         cd wolfssl
-        git checkout v5.7.0-stable
+        git checkout v5.9.2-stable
         ./autogen.sh
         ./configure '--enable-srtp-kdf' '--enable-aesctr' '--enable-intelasm' '--enable-aesgcm-stream'
         make
@@ -85,17 +85,25 @@ jobs:
 
     - name: Setup Ubuntu MbedTLS
       if:  matrix.os == 'ubuntu-latest' && matrix.crypto == 'mbedtls'
-      run: sudo apt-get install libmbedtls-dev
+      run: |
+        git clone https://github.com/Mbed-TLS/mbedtls.git
+        cd mbedtls
+        git checkout mbedtls-4.0.0
+        git submodule update --init --recursive
+        cmake -S . -B build
+        cmake --build build
+        sudo cmake --install build
+        cd ..
 
     - name: Setup macOS OpenSSL
       if: matrix.os == 'macos-latest' && matrix.crypto == 'openssl'
-      run: echo "pkgconfig-crypto-dir=PKG_CONFIG_PATH=$(brew --prefix openssl@1.1)/lib/pkgconfig" >> $GITHUB_ENV
+      run: echo "PKG_CONFIG_PATH=$(brew --prefix openssl@1.1)/lib/pkgconfig" >> $GITHUB_ENV
 
     - name: Setup macOS OpenSSL3
       if: matrix.os == 'macos-latest' && matrix.crypto == 'openssl3'
       run: |
         brew install openssl@3
-        echo "pkgconfig-crypto-dir=PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
 
     - name: Setup macOS wolfSSL
       if: matrix.os == 'macos-latest' && matrix.crypto == 'wolfssl'
@@ -103,7 +111,7 @@ jobs:
         brew install autoconf automake libtool
         git clone https://github.com/wolfSSL/wolfssl
         cd wolfssl
-        git checkout v5.7.0-stable
+        git checkout v5.9.2-stable
         ./autogen.sh
         CPU=`sysctl -n machdep.cpu.brand_string`
         if [[ "$CPU" =~ Intel ]]; then
@@ -121,17 +129,14 @@ jobs:
 
     - name: Setup macOS MbedTLS
       if:  matrix.os == 'macos-latest' && matrix.crypto == 'mbedtls'
-      run: brew install mbedtls
+      run: |
+        brew install mbedtls@3
+        echo "PKG_CONFIG_PATH=$(brew --prefix mbedtls@3)/lib/pkgconfig" >> $GITHUB_ENV
 
     - uses: actions/checkout@v2
 
     - name: Create Build Environment
-      run: meson setup ${{github.workspace}}/build
-
-    - name: Configure Meson
-      working-directory: ${{github.workspace}}/build
-      shell: bash
-      run: ${{ env.pkgconfig-crypto-dir }} meson configure ${{ matrix.meson-crypto-enable }}
+      run: meson setup ${{github.workspace}}/build -Ddefault_library=static ${{ matrix.meson-crypto-enable }}
 
     - name: Build
       working-directory: ${{github.workspace}}/build

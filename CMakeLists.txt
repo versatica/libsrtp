@@ -85,49 +85,42 @@ endif()
 set(ENABLE_DEBUG_LOGGING OFF CACHE BOOL "Enable debug logging in all modules")
 set(ERR_REPORTING_STDOUT OFF CACHE BOOL "Enable logging to stdout")
 set(ERR_REPORTING_FILE "" CACHE FILEPATH "Use file for logging")
-set(ENABLE_OPENSSL OFF CACHE BOOL "Enable OpenSSL crypto engine")
-set(ENABLE_WOLFSSL OFF CACHE BOOL "Enable wolfSSL crypto engine")
-set(ENABLE_MBEDTLS OFF CACHE BOOL "Enable MbedTLS crypto engine")
-set(ENABLE_NSS OFF CACHE BOOL "Enable NSS crypto engine")
 
-if(ENABLE_OPENSSL OR ENABLE_WOLFSSL OR ENABLE_MBEDTLS OR ENABLE_NSS)
-  set(USE_EXTERNAL_CRYPTO TRUE)
-else()
-  set(USE_EXTERNAL_CRYPTO FALSE)
+set(CRYPTO_LIBRARY_VALUES "openssl;wolfssl;mbedtls;nss;internal")
+set(CRYPTO_LIBRARY "openssl" CACHE STRING
+  "Crypto library used by libSRTP, can be one of: ${CRYPTO_LIBRARY_VALUES}")
+set_property(CACHE CRYPTO_LIBRARY PROPERTY STRINGS ${CRYPTO_LIBRARY_VALUES})
+if(NOT CRYPTO_LIBRARY IN_LIST CRYPTO_LIBRARY_VALUES)
+  message(FATAL_ERROR "Invalid value for CRYPTO_LIBRARY: ${CRYPTO_LIBRARY}. Allowed values are: ${CRYPTO_LIBRARY_VALUES}")
 endif()
+message(STATUS "Using crypto library: ${CRYPTO_LIBRARY}")
 
-if(ENABLE_OPENSSL)
-  if(ENABLE_WOLFSSL OR ENABLE_NSS OR ENABLE_MBEDTLS)
-    message(FATAL_ERROR "ssl conflict. can not enable openssl and wolfssl, mbedtls or nss simultaneously.")
-  endif()
+set(USE_EXTERNAL_CRYPTO TRUE)
+set(ENABLE_OPENSSL FALSE)
+set(ENABLE_WOLFSSL FALSE)
+set(ENABLE_MBEDTLS FALSE)
+set(ENABLE_NSS FALSE)
+
+if(CRYPTO_LIBRARY STREQUAL "internal")
+  set(USE_EXTERNAL_CRYPTO FALSE)
+elseif(CRYPTO_LIBRARY STREQUAL "openssl")
+  set(ENABLE_OPENSSL TRUE)
   find_package(OpenSSL REQUIRED)
   set(OPENSSL ${ENABLE_OPENSSL} CACHE BOOL INTERNAL)
   set(GCM ${ENABLE_OPENSSL} CACHE BOOL INTERNAL)
-endif()
-
-if(ENABLE_WOLFSSL)
-  if(ENABLE_OPENSSL OR ENABLE_NSS OR ENABLE_MBEDTLS)
-    message(FATAL_ERROR "ssl conflict. can not enable wolfssl and openssl, mbedtls or nss simultaneously.")
-  endif()
+elseif(CRYPTO_LIBRARY STREQUAL "wolfssl")
+  set(ENABLE_WOLFSSL TRUE)
   find_package(wolfSSL REQUIRED)
   set(WOLFSSL ${ENABLE_WOLFSSL} CACHE BOOL INTERNAL)
   set(WOLFSSL_KDF ${ENABLE_WOLFSSL} CACHE BOOL INTERNAL)
   set(GCM ${ENABLE_WOLFSSL} CACHE BOOL INTERNAL)
-endif()
-
-if(ENABLE_MBEDTLS)
-  if(ENABLE_OPENSSL OR ENABLE_WOLFSSL OR ENABLE_NSS)
-    message(FATAL_ERROR "ssl conflict. can not enable mbedtls and openssl, wolfssl or nss simultaneously.")
-  endif()
+elseif(CRYPTO_LIBRARY STREQUAL "mbedtls")
+  set(ENABLE_MBEDTLS TRUE)
   find_package(MbedTLS REQUIRED)
   set(MBEDTLS ${ENABLE_MBEDTLS} CACHE BOOL INTERNAL)
   set(GCM ${ENABLE_MBEDTLS} CACHE BOOL INTERNAL)
-endif()
-
-if(ENABLE_NSS)
-  if(ENABLE_OPENSSL OR ENABLE_WOLFSSL OR ENABLE_MBEDTLS)
-    message(FATAL_ERROR "ssl conflict. can not enable nss and openssl, wolfssl or mbedtls simultaneously.")
-  endif()
+elseif(CRYPTO_LIBRARY STREQUAL "nss")
+  set(ENABLE_NSS TRUE)
   find_package(NSS REQUIRED)
   set(NSS ${ENABLE_NSS} CACHE BOOL INTERNAL)
   set(GCM ${ENABLE_NSS} CACHE BOOL INTERNAL)
@@ -139,7 +132,7 @@ include_directories(${CONFIG_FILE_DIR})
 configure_file(config_in_cmake.h ${CONFIG_FILE_DIR}/config.h)
 add_definitions(-DHAVE_CONFIG_H)
 
-if(ENABLE_SANITIZE_ADDR OR ENABLE_SANITIZE_UNDEF)
+if(ENABLE_SANITIZE_ADDR OR ENABLE_SANITIZE_UNDEF OR ENABLE_SANITIZE_LEAK OR ENABLE_SANITIZE_THREAD)
     include(Sanitizer)
     add_sanitizer_flags()
 endif()
@@ -150,6 +143,7 @@ endif()
 
 set(SOURCES_C
   srtp/srtp.c
+  srtp/srtp_policy.c
 )
 
 set(CIPHERS_SOURCES_C
@@ -324,9 +318,7 @@ if(WIN32)
   target_compile_definitions(srtp3 PUBLIC _CRT_SECURE_NO_WARNINGS)
 endif()
 
-install(TARGETS srtp3 DESTINATION lib
-  EXPORT libSRTPTargets
-)
+install(TARGETS srtp3 EXPORT libSRTPTargets)
 
 install(FILES include/srtp.h crypto/include/auth.h
   crypto/include/cipher.h
@@ -480,6 +472,17 @@ if(LIBSRTP_TEST_APPS)
     endif()
     target_link_libraries(test_srtp srtp3)
     add_test(test_srtp test_srtp)
+
+    add_executable(test_srtp_policy test/test_srtp_policy.c test/util.c)
+    target_set_warnings(
+            TARGET
+            test_srtp_policy
+            ENABLE
+            ${ENABLE_WARNINGS}
+            AS_ERRORS
+            ${ENABLE_WARNINGS_AS_ERRORS})
+    target_link_libraries(test_srtp_policy srtp3)
+    add_test(test_srtp_policy test_srtp_policy)
   endif()
 
   find_program(BASH_PROGRAM bash)

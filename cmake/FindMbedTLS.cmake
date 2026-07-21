@@ -1,8 +1,12 @@
-find_path(MBEDTLS_INCLUDE_DIRS mbedtls/ssl.h)
+if (MBEDTLS_ROOT_DIR)
+    set(_MBEDTLS_ROOT_HINTS_AND_PATHS HINTS ${MBEDTLS_ROOT_DIR} PATH_SUFFIXES include lib NO_DEFAULT_PATH)
+endif()
 
-find_library(MBEDTLS_LIBRARY mbedtls)
-find_library(MBEDX509_LIBRARY mbedx509)
-find_library(MBEDCRYPTO_LIBRARY mbedcrypto)
+find_path(MBEDTLS_INCLUDE_DIRS mbedtls/ssl.h ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+
+find_library(MBEDTLS_LIBRARY mbedtls ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+find_library(MBEDX509_LIBRARY mbedx509 ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+find_library(MBEDCRYPTO_LIBRARY mbedcrypto ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
 
 set(MBEDTLS_LIBRARIES "${MBEDTLS_LIBRARY}" "${MBEDX509_LIBRARY}" "${MBEDCRYPTO_LIBRARY}")
 
@@ -13,7 +17,7 @@ find_package_handle_standard_args(MbedTLS DEFAULT_MSG
 mark_as_advanced(MBEDTLS_INCLUDE_DIRS MBEDTLS_LIBRARY MBEDX509_LIBRARY MBEDCRYPTO_LIBRARY)
 
 if(NOT TARGET MbedTLS)
-	message("in mbedtls ${MBEDTLS_LIBRARY}")
+    message("in mbedtls ${MBEDTLS_LIBRARY}")
     add_library(MbedTLS UNKNOWN IMPORTED)
     set_target_properties(MbedTLS PROPERTIES
                           INTERFACE_INCLUDE_DIRECTORIES "${MBEDTLS_INCLUDE_DIRS}"

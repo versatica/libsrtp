@@ -119,6 +119,8 @@ extern "C" {
  */
 #define SRTP_MAX_NUM_MASTER_KEYS 16
 
+#define SRTP_MAX_NUM_ENC_HDR_XTND_IDS 16
+
 #define SRTP_SALT_LEN 14
 
 /*
@@ -236,30 +238,6 @@ typedef enum {
 } srtp_sec_serv_t;
 
 /**
- * @brief srtp_crypto_policy_t describes a particular crypto policy that
- * can be applied to an SRTP stream.
- *
- * A srtp_crypto_policy_t describes a particular cryptographic policy that
- * can be applied to an SRTP or SRTCP stream.  An SRTP session policy
- * consists of a list of these policies, one for each SRTP stream
- * in the session.
- */
-typedef struct srtp_crypto_policy_t {
-    srtp_cipher_type_id_t cipher_type; /**< An integer representing          */
-                                       /**< the type of cipher.              */
-    size_t cipher_key_len;             /**< The length of the cipher key     */
-                                       /**< in octets.                       */
-    srtp_auth_type_id_t auth_type;     /**< An integer representing the      */
-                                       /**< authentication function.         */
-    size_t auth_key_len;               /**< The length of the authentication */
-                                       /**< function key in octets.          */
-    size_t auth_tag_len;               /**< The length of the authentication */
-                                       /**< tag in octets.                   */
-    srtp_sec_serv_t sec_serv;          /**< The flag indicating the security */
-                                       /**< services to be applied.          */
-} srtp_crypto_policy_t;
-
-/**
  * @brief srtp_ssrc_type_t describes the type of an SSRC.
  *
  * An srtp_ssrc_type_t enumeration is used to indicate a type of SSRC.  See
@@ -291,71 +269,302 @@ typedef struct {
                            /**< wildcard */
 } srtp_ssrc_t;
 
-/**
- * @brief srtp_master_key_t represents a master key.  There will
- * be a Master Key Index and the Master Key associated with the
- * Master Key Index.
+/*
+ * @brief identifies a particular SRTP profile
+ *
+ * An srtp_profile_t enumeration is used to identify a particular SRTP
+ * profile (that is, a set of algorithms and parameters).
  */
-typedef struct srtp_master_key_t {
-    uint8_t *key;
-    uint8_t *mki_id;
-} srtp_master_key_t;
+typedef enum {
+    srtp_profile_reserved = 0,
+    srtp_profile_null_null = 1,
+    srtp_profile_aes128_cm_sha1_80 = 2,
+    srtp_profile_aes128_cm_sha1_32 = 3,
+    srtp_profile_aes192_cm_sha1_80 = 4,
+    srtp_profile_aes192_cm_sha1_32 = 5,
+    srtp_profile_aes256_cm_sha1_80 = 6,
+    srtp_profile_aes256_cm_sha1_32 = 7,
+    srtp_profile_null_sha1_80 = 8,
+    srtp_profile_null_sha1_32 = 9,
+    srtp_profile_aead_aes_128_gcm = 10,
+    srtp_profile_aead_aes_256_gcm = 11
+} srtp_profile_t;
+
+typedef struct srtp_policy_ctx_t_ srtp_policy_ctx_t;
+typedef srtp_policy_ctx_t *srtp_policy_t;
 
 /**
- * @brief represents the policy for an SRTP session.
+ * @brief Allocate a new policy handle.
  *
- * A single srtp_policy_t struct represents the policy for a single
- * SRTP stream, and a linked list of these elements represents the
- * policy for an entire SRTP session.  Each element contains the SRTP
- * and SRTCP crypto policies for that stream, a pointer to the SRTP
- * master key for that stream, the SSRC describing that stream, or a
- * flag indicating a `wildcard' SSRC value, and a `next' field that
- * holds a pointer to the next element in the list of policy elements,
- * or NULL if it is the last element.
+ * A policy handle describes one SRTP stream policy. Configure it with
+ * srtp_policy_set_ssrc(), srtp_policy_set_profile(), optional MKI and
+ * feature setters, and srtp_policy_add_key() before passing it to
+ * srtp_create() or srtp_stream_add().
  *
- * The wildcard value SSRC_ANY_INBOUND matches any SSRC from an
- * inbound stream that for which there is no explicit SSRC entry in
- * another policy element.  Similarly, the value SSRC_ANY_OUTBOUND
- * will matches any SSRC from an outbound stream that does not appear
- * in another policy element.  Note that wildcard SSRCs &b cannot be
- * used to match both inbound and outbound traffic.  This restriction
- * is intentional, and it allows libSRTP to ensure that no security
- * lapses result from accidental re-use of SSRC values during key
- * sharing.
+ * @param policy output pointer that receives the allocated policy.
  *
- * @warning The final element of the list @b must have its `next' pointer
- *          set to NULL.
+ * @return
+ *    - srtp_err_status_ok if allocation succeeded.
+ *    - srtp_err_status_bad_param if policy is NULL.
+ *    - srtp_err_status_alloc_fail if allocation failed.
  */
+srtp_err_status_t srtp_policy_create(srtp_policy_t *policy);
 
-typedef struct srtp_policy_t {
-    srtp_ssrc_t ssrc;           /**< The SSRC value of stream, or the    */
-                                /**< flags SSRC_ANY_INBOUND or           */
-                                /**< SSRC_ANY_OUTBOUND if key sharing    */
-                                /**< is used for this policy element.    */
-    srtp_crypto_policy_t rtp;   /**< SRTP crypto policy.                 */
-    srtp_crypto_policy_t rtcp;  /**< SRTCP crypto policy.                */
-    uint8_t *key;               /**< Pointer to the SRTP master key for  */
-                                /**< this stream.                        */
-    srtp_master_key_t **keys;   /** Array of Master Key structures       */
-    size_t num_master_keys;     /** Number of master keys                */
-    bool use_mki;               /** Whether MKI is in use                */
-    size_t mki_size;            /** Size of MKI when in use              */
-    size_t window_size;         /**< The window size to use for replay   */
-                                /**< protection.                         */
-    bool allow_repeat_tx;       /**< Whether retransmissions of          */
-                                /**< packets with the same sequence      */
-                                /**< number are allowed.                 */
-                                /**< (Note that such repeated            */
-                                /**< transmissions must have the same    */
-                                /**< RTP payload, or a severe security   */
-                                /**< weakness is introduced!)            */
-    uint8_t *enc_xtn_hdr;       /**< List of header ids to encrypt.      */
-    size_t enc_xtn_hdr_count;   /**< Number of entries in list of header */
-                                /**<  ids.                               */
-    bool use_cryptex;           /**< Encrypt header block and CSRCs with */
-                                /**< cryptex.                            */
-    struct srtp_policy_t *next; /**< Pointer to next stream policy.      */
-} srtp_policy_t;
+/**
+ * @brief Clone an existing policy handle.
+ *
+ * @param policy source policy to clone.
+ * @param cloned_policy output pointer that receives the cloned policy.
+ *
+ * This copies all fields of the source policy, including configured keys. The
+ * cloned policy can be modified independently from the source policy.
+ *
+ * @return
+ *    - srtp_err_status_ok if cloning succeeded.
+ *    - srtp_err_status_bad_param if either argument is NULL.
+ *    - srtp_err_status_alloc_fail if allocation failed.
+ */
+srtp_err_status_t srtp_policy_clone(srtp_policy_t policy,
+                                    srtp_policy_t *cloned_policy);
+
+/**
+ * @brief Set the policy SSRC selector.
+ *
+ * @param policy policy handle.
+ * @param ssrc SSRC selector to apply.
+ *
+ * Valid selectors are ssrc_specific, ssrc_any_inbound, and ssrc_any_outbound.
+ *
+ * @return
+ *    - srtp_err_status_ok if the SSRC selector was accepted.
+ *    - srtp_err_status_bad_param if policy is NULL or ssrc.type is invalid.
+ */
+srtp_err_status_t srtp_policy_set_ssrc(srtp_policy_t policy, srtp_ssrc_t ssrc);
+
+/**
+ * @brief Set the SRTP profile and initialize RTP/RTCP crypto settings.
+ *
+ * @param policy policy handle.
+ * @param profile profile to apply.
+ *
+ * Call this before srtp_policy_set_sec_serv() and before validation. Keys
+ * added with srtp_policy_add_key() must match this profile's master key and
+ * salt lengths when the policy is validated.
+ *
+ * @return
+ *    - srtp_err_status_ok if the profile was applied.
+ *    - srtp_err_status_bad_param if policy is NULL or profile is invalid.
+ *    - [other] if profile-to-crypto mapping failed.
+ */
+srtp_err_status_t srtp_policy_set_profile(srtp_policy_t policy,
+                                          srtp_profile_t profile);
+
+/**
+ * @brief Get the profile currently set on a policy.
+ *
+ * @param policy policy handle.
+ * @param profile output pointer that receives the configured profile.
+ *
+ * @return
+ *    - srtp_err_status_ok if the profile was returned.
+ *    - srtp_err_status_bad_param if any argument is NULL.
+ */
+srtp_err_status_t srtp_policy_get_profile(srtp_policy_t policy,
+                                          srtp_profile_t *profile);
+
+/**
+ * @brief Override security-service flags for RTP and RTCP.
+ *
+ * @param policy policy handle.
+ * @param rtp_sec_serv RTP security-service flags.
+ * @param rtcp_sec_serv RTCP security-service flags.
+ *
+ * The policy must already have a profile set with srtp_policy_set_profile().
+ *
+ * @return
+ *    - srtp_err_status_ok if flags were applied.
+ *    - srtp_err_status_bad_param if policy is NULL or profile is unset.
+ */
+srtp_err_status_t srtp_policy_set_sec_serv(srtp_policy_t policy,
+                                           srtp_sec_serv_t rtp_sec_serv,
+                                           srtp_sec_serv_t rtcp_sec_serv);
+
+/**
+ * @brief Enable or disable MKI on the policy.
+ *
+ * @param policy policy handle.
+ * @param mki_len MKI length in octets (0 disables MKI).
+ *
+ * mki_len must be <= SRTP_MAX_MKI_LEN.
+ * Call this with mki_len > 0 before adding MKI-tagged keys via
+ * srtp_policy_add_key(). Call this with mki_len == 0 to disable MKI.
+ *
+ * @return
+ *    - srtp_err_status_ok if MKI settings were applied.
+ *    - srtp_err_status_bad_param if policy is NULL or mki_len is invalid.
+ */
+srtp_err_status_t srtp_policy_use_mki(srtp_policy_t policy, size_t mki_len);
+
+/**
+ * @brief Read the configured MKI length.
+ *
+ * @param policy policy handle.
+ * @param mki_len output pointer that receives MKI length in octets.
+ *
+ * @return
+ *    - srtp_err_status_ok if MKI length was returned.
+ *    - srtp_err_status_bad_param if any argument is NULL.
+ */
+srtp_err_status_t srtp_policy_get_mki_length(srtp_policy_t policy,
+                                             size_t *mki_len);
+
+/**
+ * @brief Add a master key and salt to a policy handle.
+ *
+ * @param policy policy handle.
+ * @param key pointer to key bytes.
+ * @param key_len key length in octets.
+ * @param salt pointer to salt bytes.
+ * @param salt_len salt length in octets.
+ * @param mki pointer to MKI bytes for this key.
+ * @param mki_len MKI length in octets for this key.
+ *
+ * key_len + salt_len must be <= SRTP_MAX_KEY_LEN.
+ * key and salt must not be NULL.
+ * mki must not be NULL when mki_len > 0.
+ * If MKI is enabled, mki_len must match the configured MKI length.
+ * If MKI is disabled, mki_len must be 0 and only one key can be configured. A
+ * policy can hold at most SRTP_MAX_NUM_MASTER_KEYS keys.
+ *
+ * The key and salt are stored separately in the policy. Validation requires
+ * their lengths to exactly match the configured profile. The null/null profile
+ * is valid only without keys and without MKI.
+ *
+ * @return
+ *    - srtp_err_status_ok if key was added.
+ *    - srtp_err_status_bad_param if policy is NULL, key/salt/MKI arguments are
+ *      invalid, MKI state does not match mki_len, the non-MKI single-key limit
+ *      or key limit is exceeded, or key/salt/MKI sizes exceed supported limits.
+ */
+srtp_err_status_t srtp_policy_add_key(srtp_policy_t policy,
+                                      const uint8_t *key,
+                                      size_t key_len,
+                                      const uint8_t *salt,
+                                      size_t salt_len,
+                                      const uint8_t *mki,
+                                      size_t mki_len);
+
+/**
+ * @brief Remove all configured master keys from a policy.
+ *
+ * @param policy policy handle.
+ *
+ * This clears the configured key material and resets key count to zero.
+ * Other policy settings (for example, profile, SSRC, and MKI mode) are
+ * unchanged.
+ *
+ * @return
+ *    - srtp_err_status_ok if keys were removed.
+ *    - srtp_err_status_bad_param if policy is NULL.
+ */
+srtp_err_status_t srtp_policy_remove_keys(srtp_policy_t policy);
+
+/**
+ * @brief Set replay-window size.
+ *
+ * @param policy policy handle.
+ * @param window_size replay window size in packets.
+ *
+ * window_size must be 0 or in [64, 0x7fff].
+ *
+ * @return
+ *    - srtp_err_status_ok if value was accepted.
+ *    - srtp_err_status_bad_param if policy is NULL or value is invalid.
+ */
+srtp_err_status_t srtp_policy_set_window_size(srtp_policy_t policy,
+                                              size_t window_size);
+
+/**
+ * @brief Enable or disable repeat transmission for RTP.
+ *
+ * @param policy policy handle.
+ * @param allow true to allow repeat transmissions, false otherwise.
+ *
+ * @return
+ *    - srtp_err_status_ok if value was applied.
+ *    - srtp_err_status_bad_param if policy is NULL.
+ */
+srtp_err_status_t srtp_policy_set_allow_repeat_tx(srtp_policy_t policy,
+                                                  bool allow);
+
+/**
+ * @brief Enable or disable cryptex for this policy.
+ *
+ * @param policy policy handle.
+ * @param use_cryptex true to enable cryptex, false to disable.
+ *
+ * @return
+ *    - srtp_err_status_ok if value was applied.
+ *    - srtp_err_status_bad_param if policy is NULL.
+ */
+srtp_err_status_t srtp_policy_set_cryptex(srtp_policy_t policy,
+                                          bool use_cryptex);
+
+/**
+ * @brief Add an encrypted header extension ID.
+ *
+ * @param policy policy handle.
+ * @param hdr_xtnd_id header extension ID to encrypt.
+ *
+ * Duplicate IDs are rejected.
+ * The number of configured IDs must be < SRTP_MAX_NUM_ENC_HDR_XTND_IDS.
+ * Policies with both cryptex and encrypted header extensions are rejected by
+ * srtp_policy_validate().
+ *
+ * @return
+ *    - srtp_err_status_ok if ID was added.
+ *    - srtp_err_status_bad_param if policy is NULL, the ID already exists, or
+ *      the list is full.
+ */
+srtp_err_status_t srtp_policy_add_enc_hdr_xtnd_id(srtp_policy_t policy,
+                                                  uint8_t hdr_xtnd_id);
+
+/**
+ * @brief Remove all encrypted header extension IDs from a policy.
+ *
+ * @param policy policy handle.
+ *
+ * This clears the configured encrypted header extension IDs and resets the
+ * count to zero.
+ *
+ * @return
+ *    - srtp_err_status_ok if IDs were removed.
+ *    - srtp_err_status_bad_param if policy is NULL.
+ */
+srtp_err_status_t srtp_policy_remove_enc_hdr_xtnd_ids(srtp_policy_t policy);
+
+/**
+ * @brief Destroy a policy handle.
+ *
+ * @param policy policy handle. NULL is ignored.
+ */
+void srtp_policy_destroy(srtp_policy_t policy);
+
+/**
+ * @brief Validate that policy contains a usable configuration.
+ *
+ * @param policy policy handle.
+ *
+ * Validation checks include profile, SSRC selector, key/MKI consistency,
+ * key count, profile key/salt lengths, replay-window constraints, and invalid
+ * cryptex/encrypted-header-extension combinations. The null/null profile is
+ * valid without keys and invalid with configured keys or MKI.
+ *
+ * @return
+ *    - srtp_err_status_ok if policy is valid.
+ *    - srtp_err_status_bad_param if policy is NULL or configuration is invalid.
+ */
+srtp_err_status_t srtp_policy_validate(srtp_policy_t policy);
 
 /**
  * @brief An srtp_t points to an SRTP session structure.
@@ -497,19 +706,16 @@ srtp_err_status_t srtp_unprotect(srtp_t ctx,
  * @param session is a pointer to the SRTP session to which the policy is
  * to be added.
  *
- * @param policy is the srtp_policy_t struct that describes the policy
- * for the session.  The struct may be a single element, or it may be
- * the head of a list, in which case each element of the list is
- * processed.  It may also be NULL, in which case streams should be added
- * later using srtp_stream_add().  The final element of the list @b must
- * have its `next' field set to NULL.
+ * @param policy is an srtp_policy_t handle that describes one stream policy.
+ * It may be NULL, in which case streams can be added later using
+ * srtp_stream_add().
  *
  * @return
  *    - srtp_err_status_ok           if creation succeeded.
  *    - srtp_err_status_alloc_fail   if allocation failed.
  *    - srtp_err_status_init_fail    if initialization failed.
  */
-srtp_err_status_t srtp_create(srtp_t *session, const srtp_policy_t *policy);
+srtp_err_status_t srtp_create(srtp_t *session, const srtp_policy_t policy);
 
 /**
  * @brief srtp_stream_add() allocates and initializes an SRTP stream
@@ -525,7 +731,7 @@ srtp_err_status_t srtp_create(srtp_t *session, const srtp_policy_t *policy);
  *    - srtp_err_status_alloc_fail   if stream allocation failed
  *    - srtp_err_status_init_fail    if stream initialization failed.
  */
-srtp_err_status_t srtp_stream_add(srtp_t session, const srtp_policy_t *policy);
+srtp_err_status_t srtp_stream_add(srtp_t session, const srtp_policy_t policy);
 
 /**
  * @brief srtp_stream_remove() deallocates an SRTP stream.
@@ -565,11 +771,8 @@ srtp_err_status_t srtp_stream_remove(srtp_t session, uint32_t ssrc);
  * @param session is the SRTP session that contains the streams
  *        to be updated.
  *
- * @param policy is the srtp_policy_t struct that describes the policy
- * for the session.  The struct may be a single element, or it may be
- * the head of a list, in which case each element of the list is
- * processed. The final element of the list @b must
- * have its `next' field set to NULL.
+ * @param policy is an srtp_policy_t handle that describes the update policy
+ * to apply to matching stream(s).
  *
  * @return
  *    - srtp_err_status_ok           if stream creation succeed.
@@ -578,7 +781,7 @@ srtp_err_status_t srtp_stream_remove(srtp_t session, uint32_t ssrc);
  *    - [other]                 otherwise.
  *
  */
-srtp_err_status_t srtp_update(srtp_t session, const srtp_policy_t *policy);
+srtp_err_status_t srtp_update(srtp_t session, const srtp_policy_t policy);
 
 /**
  * @brief srtp_stream_update() updates a SRTP stream.
@@ -591,8 +794,8 @@ srtp_err_status_t srtp_update(srtp_t session, const srtp_policy_t *policy);
  * @param session is the SRTP session that contains the streams
  *        to be updated.
  *
- * @param policy is the srtp_policy_t struct that describes the policy
- * for the session.
+ * @param policy is an srtp_policy_t handle that describes the update policy
+ * to apply to matching stream(s).
  *
  * @return
  *    - srtp_err_status_ok           if stream creation succeeded.
@@ -602,386 +805,7 @@ srtp_err_status_t srtp_update(srtp_t session, const srtp_policy_t *policy);
  *
  */
 srtp_err_status_t srtp_stream_update(srtp_t session,
-                                     const srtp_policy_t *policy);
-
-/**
- * @brief srtp_crypto_policy_set_rtp_default() sets a crypto policy
- * structure to the SRTP default policy for RTP protection.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_rtp_default(&p) sets the
- * srtp_crypto_policy_t at location p to the SRTP default policy for RTP
- * protection, as defined in the specification.  This function is a
- * convenience that helps to avoid dealing directly with the policy
- * data structure.  You are encouraged to initialize policy elements
- * with this function call.  Doing so may allow your code to be
- * forward compatible with later versions of libSRTP that include more
- * elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_rtp_default(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_rtcp_default() sets a crypto policy
- * structure to the SRTP default policy for RTCP protection.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_rtcp_default(&p) sets the
- * srtp_crypto_policy_t at location p to the SRTP default policy for RTCP
- * protection, as defined in the specification.  This function is a
- * convenience that helps to avoid dealing directly with the policy
- * data structure.  You are encouraged to initialize policy elements
- * with this function call.  Doing so may allow your code to be
- * forward compatible with later versions of libSRTP that include more
- * elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_rtcp_default(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80() sets a crypto
- * policy structure to the SRTP default policy for RTP protection.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80() is a
- * synonym for srtp_crypto_policy_set_rtp_default().  It conforms to the
- * naming convention used in RFC 4568 (SDP Security Descriptions for
- * Media Streams).
- *
- * @return void.
- *
- */
-#define srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80(p)                      \
-    srtp_crypto_policy_set_rtp_default(p)
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32() sets a crypto
- * policy structure to a short-authentication tag policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32(&p)
- * sets the srtp_crypto_policy_t at location p to use policy
- * AES_CM_128_HMAC_SHA1_32 as defined in RFC 4568.
- * This policy uses AES-128
- * Counter Mode encryption and HMAC-SHA1 authentication, with an
- * authentication tag that is only 32 bits long.  This length is
- * considered adequate only for protecting audio and video media that
- * use a stateless playback function.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This crypto policy is intended for use in SRTP, but not in
- * SRTCP.  It is recommended that a policy that uses longer
- * authentication tags be used for SRTCP.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_128_null_auth() sets a crypto
- * policy structure to an encryption-only policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_128_null_auth(&p) sets
- * the srtp_crypto_policy_t at location p to use the SRTP default cipher
- * (AES-128 Counter Mode), but to use no authentication method.  This
- * policy is NOT RECOMMENDED unless it is unavoidable; see Section 7.5
- * of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This policy is NOT RECOMMENDED for SRTP unless it is
- * unavoidable, and it is NOT RECOMMENDED at all for SRTCP; see
- * Section 7.5 of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_128_null_auth(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_null_cipher_hmac_sha1_80() sets a crypto
- * policy structure to an authentication-only policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_null_cipher_hmac_sha1_80(&p)
- * sets the srtp_crypto_policy_t at location p to use HMAC-SHA1 with an 80
- * bit authentication tag to provide message authentication, but to
- * use no encryption.  This policy is NOT RECOMMENDED for SRTP unless
- * there is a requirement to forgo encryption.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This policy is NOT RECOMMENDED for SRTP unless there is a
- * requirement to forgo encryption.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_null_cipher_hmac_sha1_80(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_null_cipher_hmac_null() sets a crypto
- * policy structure to use no encryption or authentication.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_null_cipher_hmac_null(&p)
- * sets the srtp_crypto_policy_t at location p to use no encryption and
- * no authentication.  This policy should only be used for testing and
- * troubleshooting.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This policy is NOT RECOMMENDED for SRTP unless there is a
- * requirement to forgo encryption and authentication.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_null_cipher_hmac_null(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80() sets a crypto
- * policy structure to a encryption and authentication policy using AES-256
- * for RTP protection.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80(&p)
- * sets the srtp_crypto_policy_t at location p to use policy
- * AES_CM_256_HMAC_SHA1_80 as defined in RFC 6188.  This policy uses AES-256
- * Counter Mode encryption and HMAC-SHA1 authentication, with an 80 bit
- * authentication tag.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_256_hmac_sha1_32() sets a crypto
- * policy structure to a short-authentication tag policy using AES-256
- * encryption.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_256_hmac_sha1_32(&p)
- * sets the srtp_crypto_policy_t at location p to use policy
- * AES_CM_256_HMAC_SHA1_32 as defined in RFC 6188.  This policy uses AES-256
- * Counter Mode encryption and HMAC-SHA1 authentication, with an
- * authentication tag that is only 32 bits long.  This length is
- * considered adequate only for protecting audio and video media that
- * use a stateless playback function.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This crypto policy is intended for use in SRTP, but not in
- * SRTCP.  It is recommended that a policy that uses longer
- * authentication tags be used for SRTCP.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_256_hmac_sha1_32(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_256_null_auth() sets a crypto
- * policy structure to an encryption-only policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_256_null_auth(&p) sets
- * the srtp_crypto_policy_t at location p to use the SRTP default cipher
- * (AES-256 Counter Mode), but to use no authentication method.  This
- * policy is NOT RECOMMENDED unless it is unavoidable; see Section 7.5
- * of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This policy is NOT RECOMMENDED for SRTP unless it is
- * unavoidable, and it is NOT RECOMMENDED at all for SRTCP; see
- * Section 7.5 of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_256_null_auth(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80() sets a crypto
- * policy structure to a encryption and authentication policy using AES-192
- * for RTP protection.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80(&p)
- * sets the srtp_crypto_policy_t at location p to use policy
- * AES_CM_192_HMAC_SHA1_80 as defined in RFC 6188.  This policy uses AES-192
- * Counter Mode encryption and HMAC-SHA1 authentication, with an 80 bit
- * authentication tag.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_192_hmac_sha1_32() sets a crypto
- * policy structure to a short-authentication tag policy using AES-192
- * encryption.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_192_hmac_sha1_32(&p)
- * sets the srtp_crypto_policy_t at location p to use policy
- * AES_CM_192_HMAC_SHA1_32 as defined in RFC 6188.  This policy uses AES-192
- * Counter Mode encryption and HMAC-SHA1 authentication, with an
- * authentication tag that is only 32 bits long.  This length is
- * considered adequate only for protecting audio and video media that
- * use a stateless playback function.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This crypto policy is intended for use in SRTP, but not in
- * SRTCP.  It is recommended that a policy that uses longer
- * authentication tags be used for SRTCP.  See Section 7.5 of RFC 3711
- * (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_192_hmac_sha1_32(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_cm_192_null_auth() sets a crypto
- * policy structure to an encryption-only policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_cm_192_null_auth(&p) sets
- * the srtp_crypto_policy_t at location p to use the SRTP default cipher
- * (AES-192 Counter Mode), but to use no authentication method.  This
- * policy is NOT RECOMMENDED unless it is unavoidable; see Section 7.5
- * of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @warning This policy is NOT RECOMMENDED for SRTP unless it is
- * unavoidable, and it is NOT RECOMMENDED at all for SRTCP; see
- * Section 7.5 of RFC 3711 (http://www.ietf.org/rfc/rfc3711.txt).
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_cm_192_null_auth(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_gcm_128_16_auth() sets a crypto
- * policy structure to an AEAD encryption policy.
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_gcm_128_16_auth(&p) sets
- * the srtp_crypto_policy_t at location p to use the SRTP default cipher
- * (AES-128 Galois Counter Mode) with 16 octet auth tag.  This
- * policy applies confidentiality and authentication to both the
- * RTP and RTCP packets.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_gcm_128_16_auth(srtp_crypto_policy_t *p);
-
-/**
- * @brief srtp_crypto_policy_set_aes_gcm_256_16_auth() sets a crypto
- * policy structure to an AEAD encryption policy
- *
- * @param p is a pointer to the policy structure to be set
- *
- * The function call srtp_crypto_policy_set_aes_gcm_256_16_auth(&p) sets
- * the srtp_crypto_policy_t at location p to use the SRTP default cipher
- * (AES-256 Galois Counter Mode) with 16 octet auth tag.  This
- * policy applies confidentiality and authentication to both the
- * RTP and RTCP packets.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return void.
- *
- */
-void srtp_crypto_policy_set_aes_gcm_256_16_auth(srtp_crypto_policy_t *p);
+                                     const srtp_policy_t policy);
 
 /**
  * @brief srtp_dealloc() deallocates storage for an SRTP session
@@ -999,76 +823,6 @@ void srtp_crypto_policy_set_aes_gcm_256_16_auth(srtp_crypto_policy_t *p);
  *    - srtp_err_status_dealloc_fail   a memory deallocation failure occurred.
  */
 srtp_err_status_t srtp_dealloc(srtp_t s);
-
-/*
- * @brief identifies a particular SRTP profile
- *
- * An srtp_profile_t enumeration is used to identify a particular SRTP
- * profile (that is, a set of algorithms and parameters).
- */
-typedef enum {
-    srtp_profile_reserved = 0,
-    srtp_profile_aes128_cm_sha1_80 = 1,
-    srtp_profile_aes128_cm_sha1_32 = 2,
-    srtp_profile_null_sha1_80 = 5,
-    srtp_profile_null_sha1_32 = 6,
-    srtp_profile_aead_aes_128_gcm = 7,
-    srtp_profile_aead_aes_256_gcm = 8
-} srtp_profile_t;
-
-/**
- * @brief srtp_crypto_policy_set_from_profile_for_rtp() sets a crypto policy
- * structure to the appropriate value for RTP based on an srtp_profile_t
- *
- * @param policy is a pointer to the policy structure to be set
- *
- * @param profile is an enumeration for the policy to be set
- *
- * The function call srtp_crypto_policy_set_rtp_default(&policy, profile)
- * sets the srtp_crypto_policy_t at location policy to the policy for RTP
- * protection, as defined by the srtp_profile_t profile.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return values
- *     - srtp_err_status_ok         no problems were encountered
- *     - srtp_err_status_bad_param  the profile is not supported
- *
- */
-srtp_err_status_t srtp_crypto_policy_set_from_profile_for_rtp(
-    srtp_crypto_policy_t *policy,
-    srtp_profile_t profile);
-
-/**
- * @brief srtp_crypto_policy_set_from_profile_for_rtcp() sets a crypto policy
- * structure to the appropriate value for RTCP based on an srtp_profile_t
- *
- * @param policy is a pointer to the policy structure to be set
- *
- * @param profile is an enumeration for the policy to be set
- *
- * The function call srtp_crypto_policy_set_rtcp_default(&policy, profile)
- * sets the srtp_crypto_policy_t at location policy to the policy for RTCP
- * protection, as defined by the srtp_profile_t profile.
- *
- * This function is a convenience that helps to avoid dealing directly
- * with the policy data structure.  You are encouraged to initialize
- * policy elements with this function call.  Doing so may allow your
- * code to be forward compatible with later versions of libSRTP that
- * include more elements in the srtp_crypto_policy_t datatype.
- *
- * @return values
- *     - srtp_err_status_ok         no problems were encountered
- *     - srtp_err_status_bad_param  the profile is not supported
- *
- */
-srtp_err_status_t srtp_crypto_policy_set_from_profile_for_rtcp(
-    srtp_crypto_policy_t *policy,
-    srtp_profile_t profile);
 
 /**
  * @brief returns the master key length for a given SRTP profile
@@ -1089,6 +843,7 @@ size_t srtp_profile_get_master_salt_length(srtp_profile_t profile);
  *
  * @warning There must be at least bytes_in_salt + bytes_in_key bytes
  *          available at the location pointed to by key.
+ *
  *
  */
 void srtp_append_salt_to_key(uint8_t *key,

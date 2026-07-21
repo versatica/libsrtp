@@ -53,13 +53,13 @@
 #ifndef SRTP_RTP_H
 #define SRTP_RTP_H
 
+#include "srtp_priv.h"
+
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
 #elif defined HAVE_WINSOCK2_H
 #include <winsock2.h>
 #endif
-
-#include "srtp_priv.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -115,12 +115,12 @@ srtp_err_status_t rtp_sender_init(rtp_sender_t sender,
                                   uint32_t ssrc);
 
 srtp_err_status_t rtp_sender_init_srtp(rtp_sender_t sender,
-                                       const srtp_policy_t *policy);
+                                       const srtp_policy_t policy);
 
 srtp_err_status_t rtp_sender_deinit_srtp(rtp_sender_t sender);
 
 srtp_err_status_t rtp_receiver_init_srtp(rtp_receiver_t sender,
-                                         const srtp_policy_t *policy);
+                                         const srtp_policy_t policy);
 
 srtp_err_status_t rtp_receiver_deinit_srtp(rtp_receiver_t sender);
 

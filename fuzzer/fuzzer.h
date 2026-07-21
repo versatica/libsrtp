@@ -1,4 +1,3 @@
-#define MAX_KEY_LEN 46
 #define EXTRACT(dest, src, srcsize, copysize)                                  \
     {                                                                          \
         memcpy((dest), (src), (copysize));                                     \
@@ -24,21 +23,9 @@
 #endif
 
 typedef srtp_err_status_t (*fuzz_srtp_func)(srtp_t, void *, size_t *, size_t);
-typedef void (*fuzz_srtp_crypto_policy_func)(srtp_crypto_policy_t *);
 typedef srtp_err_status_t (*fuzz_srtp_get_length_func)(const srtp_t,
                                                        size_t,
                                                        size_t *);
-
-struct fuzz_srtp_params {
-    uint8_t srtp_func;
-    uint8_t srtp_crypto_policy_func;
-    size_t window_size;
-    uint8_t allow_repeat_tx;
-    uint8_t ssrc_type;
-    uint32_t ssrc_value;
-    uint8_t key[MAX_KEY_LEN];
-    uint8_t mki;
-};
 
 static srtp_err_status_t fuzz_srtp_protect(srtp_t srtp_sender,
                                            void *hdr,
@@ -78,40 +65,23 @@ const struct fuzz_srtp_func_ext srtp_funcs[] = {
     { fuzz_srtp_unprotect_rtcp, false, NULL }
 };
 
-struct fuzz_srtp_crypto_policy_func_ext {
-    fuzz_srtp_crypto_policy_func crypto_policy_func;
+struct fuzz_srtp_profile_ext {
+    srtp_profile_t profile;
     const char *name;
 };
 
-const struct fuzz_srtp_crypto_policy_func_ext fuzz_srtp_crypto_policies[] = {
-    { srtp_crypto_policy_set_rtp_default, "" },
-    { srtp_crypto_policy_set_rtcp_default, "" },
-    { srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32,
-      "srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32" },
-    { srtp_crypto_policy_set_aes_cm_128_null_auth,
-      "srtp_crypto_policy_set_aes_cm_128_null_auth" },
-    { srtp_crypto_policy_set_aes_cm_256_hmac_sha1_32,
-      "srtp_crypto_policy_set_aes_cm_256_hmac_sha1_32" },
-    { srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80,
-      "srtp_crypto_policy_set_aes_cm_256_hmac_sha1_80" },
-    { srtp_crypto_policy_set_aes_cm_256_null_auth,
-      "srtp_crypto_policy_set_aes_cm_256_null_auth" },
-    { srtp_crypto_policy_set_null_cipher_hmac_null,
-      "srtp_crypto_policy_set_null_cipher_hmac_null" },
-    { srtp_crypto_policy_set_null_cipher_hmac_sha1_80,
-      "srtp_crypto_policy_set_null_cipher_hmac_sha1_80" },
-#ifdef OPENSSL
-    { srtp_crypto_policy_set_aes_cm_192_hmac_sha1_32,
-      "srtp_crypto_policy_set_aes_cm_192_hmac_sha1_32" },
-    { srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80,
-      "srtp_crypto_policy_set_aes_cm_192_hmac_sha1_80" },
-    { srtp_crypto_policy_set_aes_cm_192_null_auth,
-      "srtp_crypto_policy_set_aes_cm_192_null_auth" },
-    { srtp_crypto_policy_set_aes_gcm_128_16_auth,
-      "srtp_crypto_policy_set_aes_gcm_128_16_auth" },
-    { srtp_crypto_policy_set_aes_gcm_256_16_auth,
-      "srtp_crypto_policy_set_aes_gcm_256_16_auth" },
-#endif
+const struct fuzz_srtp_profile_ext fuzz_srtp_profiles[] = {
+    { srtp_profile_null_null, "srtp_profile_null_null" },
+    { srtp_profile_aes128_cm_sha1_80, "srtp_profile_aes128_cm_sha1_80" },
+    { srtp_profile_aes128_cm_sha1_32, "srtp_profile_aes128_cm_sha1_32" },
+    { srtp_profile_aes256_cm_sha1_80, "srtp_profile_aes256_cm_sha1_80" },
+    { srtp_profile_aes256_cm_sha1_32, "srtp_profile_aes256_cm_sha1_32" },
+    { srtp_profile_null_sha1_80, "srtp_profile_null_sha1_80" },
+    { srtp_profile_null_sha1_32, "srtp_profile_null_sha1_32" },
+    { srtp_profile_aes192_cm_sha1_80, "srtp_profile_aes192_cm_sha1_80" },
+    { srtp_profile_aes192_cm_sha1_32, "srtp_profile_aes192_cm_sha1_32" },
+    { srtp_profile_aead_aes_128_gcm, "srtp_profile_aead_aes_128_gcm" },
+    { srtp_profile_aead_aes_256_gcm, "srtp_profile_aead_aes_256_gcm" },
 };
 
 struct fuzz_srtp_ssrc_type_ext {
